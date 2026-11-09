@@ -2038,7 +2038,6 @@
         async function saveProfileToFirebase() {
             const targetDocId = currentProfileUid || (auth && auth.currentUser ? auth.currentUser.uid : 'demo_user');
             try {
-                // Всегда сохраняем в localStorage в качестве надежного резервного хранилища
                 localStorage.setItem(`vibegram_profile_${targetDocId}`, JSON.stringify(profileDataState));
 
                 if (db) {
@@ -2046,7 +2045,6 @@
                     await setDoc(profileDocRef, profileDataState, { merge: true });
                 }
             } catch (err) {
-                // Перехватываем ошибки недостаточных прав Firestore, предотвращая падение приложения
                 console.warn("Firestore save handled gracefully:", err?.message || err);
             }
         }
@@ -2058,7 +2056,6 @@
                 return;
             }
 
-            // Сначала проверяем локальное кэш-хранилище
             const localSaved = localStorage.getItem(`vibegram_profile_${uid}`);
             if (localSaved) {
                 try {
@@ -3354,8 +3351,40 @@
                 loginFormEl.addEventListener('submit', async (e) => {
                     e.preventDefault();
                     let tgUser = document.getElementById('login-username').value.trim().toLowerCase();
+                    const passwordInput = document.getElementById('login-password').value;
+                    const loginError = document.getElementById('login-error');
+                    
                     if (!tgUser.startsWith('@')) tgUser = '@' + tgUser;
                     const cleanKey = tgUser.replace('@', '');
+
+                    if (loginError) loginError.innerText = '';
+
+                    // Проверяем существование профиля в Firestore или локальном хранилище
+                    let profileExists = false;
+                    try {
+                        if (db) {
+                            const profileDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'profiles', cleanKey);
+                            const snapshot = await getDoc(profileDocRef);
+                            if (snapshot.exists()) {
+                                profileExists = true;
+                            }
+                        }
+                    } catch (err) {}
+
+                    if (!profileExists) {
+                        const localSaved = localStorage.getItem(`vibegram_profile_${cleanKey}`);
+                        if (localSaved) {
+                            profileExists = true;
+                        }
+                    }
+
+                    if (!profileExists && cleanKey !== 'sashakuzya' && cleanKey !== 'demo_user') {
+                        if (loginError) {
+                            loginError.innerText = 'Аккаунт с таким юзернеймом не найден. Пожалуйста, зарегистрируйтесь!';
+                        }
+                        showToast('Аккаунт не найден. Зарегистрируйтесь.');
+                        return;
+                    }
 
                     currentUser = { uid: firebaseUser ? firebaseUser.uid : 'custom', username: tgUser };
                     updateAuthUI(currentUser);
@@ -3363,7 +3392,7 @@
                     const backdrop = document.getElementById('auth-modal-backdrop');
                     if (backdrop) backdrop.classList.remove('active');
                     window.navigateTo(`?uid=${cleanKey}`);
-                    showToast('Успешный вход по Telegram юзернейму!');
+                    showToast('Успешный вход в аккаунт!');
                 });
             }
 
@@ -3423,7 +3452,7 @@
                     updateAuthUI(currentUser);
 
                     const backdrop = document.getElementById('auth-modal-backdrop');
-                    if (backdrop) backdrop.classList.remove('active');
+                    if (backdrop) backdrop.classList.dismiss('active');
 
                     showToast('Регистрация и привязка успешны!');
                     window.navigateTo(`?uid=${cleanKey}`);
