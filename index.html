@@ -1901,15 +1901,15 @@
         };
 
         const appId = (typeof __app_id !== 'undefined' ? __app_id : 'vibegram-default-app').replace(/[.#$\[\]]/g, '_');
-        const firebaseConfig = {
-  apiKey: "AIzaSyBxShTi6HSpNolc2FbflnNvZPxzFNbCdfo",
-  authDomain: "vibegram-73901.firebaseapp.com",
-  projectId: "vibegram-73901",
-  storageBucket: "vibegram-73901.firebasestorage.app",
-  messagingSenderId: "78131286338",
-  appId: "1:78131286338:web:31300ac4075b223d0778db",
-  measurementId: "G-S0DY0NDSM1"
-};
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyDummyKeyForVibegramFallback12345",
+            authDomain: "vibegram-app.firebaseapp.com",
+            databaseURL: "https://vibegram-app-default-rtdb.firebaseio.com",
+            projectId: "vibegram-app",
+            storageBucket: "vibegram-app.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef"
+        };
 
         let app, auth, db;
         try {
@@ -3171,12 +3171,8 @@
             const headerLoginBtn = document.getElementById('header-login-btn');
             if (headerLoginBtn) {
                 headerLoginBtn.addEventListener('click', () => {
-                    if (auth && auth.currentUser) {
-                        window.navigateTo(`?uid=${auth.currentUser.uid}`);
-                    } else {
-                        const backdrop = document.getElementById('auth-modal-backdrop');
-                        if (backdrop) backdrop.classList.add('active');
-                    }
+                    const backdrop = document.getElementById('auth-modal-backdrop');
+                    if (backdrop) backdrop.classList.add('active');
                 });
             }
 
