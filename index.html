@@ -2065,6 +2065,7 @@
                         profileDataState = {
                             displayName: currentUser.displayName || 'Мой Профиль',
                             searchName: (currentUser.displayName || 'Мой Профиль').toLowerCase(),
+                            tgUsername: currentUser.username || '@user',
                             photoBase64: DEFAULT_AVATAR,
                             bannerBase64: '',
                             pageBgBase64: '',
@@ -2074,7 +2075,7 @@
                             about: 'Привет! Это мой профиль в Vibegram 🚀',
                             favoriteColor: '#ff2e88',
                             userPhotos: [],
-                            socialLinks: [],
+                            socialLinks: currentUser.username ? [{ name: 'Telegram', link: currentUser.username }] : [],
                             favoriteGames: [],
                             sports: [],
                             dreamCars: [],
@@ -2920,39 +2921,73 @@
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         firebaseUser = user;
-                        currentUser = { uid: user.uid, username: user.email || '@user_' + user.uid.substring(0,6) };
+
+                        // ПУНКТ 1: Интеграция с Telegram Web App для автоматической привязки аккаунта к юзернейму ТГ
+                        const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+                        let tgUsername = tgUser && tgUser.username ? '@' + tgUser.username : null;
+                        let tgName = tgUser ? `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() : null;
+
+                        if (!tgUsername) {
+                            tgUsername = '@user_' + user.uid.substring(0, 6);
+                        }
+                        if (!tgName) {
+                            tgName = 'Мой Профиль';
+                        }
+
+                        currentUser = { uid: user.uid, username: tgUsername, displayName: tgName };
                         updateAuthUI(currentUser);
                         
-                        const profileRef = ref(db, `artifacts/${appId}/public/data/profiles/${user.uid}`);
+                        // Проверяем существование профиля в Firebase по уникальному Telegram юзернейму или uid
+                        const cleanTgKey = tgUsername.replace('@', '').toLowerCase();
+                        const profileRef = ref(db, `artifacts/${appId}/public/data/profiles/${cleanTgKey}`);
                         const snapshot = await get(profileRef);
-                        if (!snapshot.exists()) {
-                            profileDataState = {
-                                displayName: 'Мой Профиль',
-                                searchName: 'мой профиль',
-                                photoBase64: DEFAULT_AVATAR,
-                                bannerBase64: '',
-                                pageBgBase64: '',
-                                country: 'Россия',
-                                countryFlag: '🇷🇺',
-                                birthdate: '',
-                                about: 'Это мой облачный аккаунт в Vibegram 🚀',
-                                favoriteColor: '#ff2e88',
-                                userPhotos: [],
-                                socialLinks: [],
-                                favoriteGames: [],
-                                sports: [],
-                                dreamCars: [],
-                                favoriteMovies: [],
-                                favoriteSeries: [],
-                                musicGenres: [],
-                                favoriteSongs: [],
-                                hobbies: [],
-                                activeCategories: ['photos', 'socials', 'games', 'sport', 'garage', 'movies', 'series', 'music', 'hobbies', 'color'],
-                                vibeCount: 1,
-                                vibeGivers: [],
-                                updatedAt: Date.now()
-                            };
-                            await set(profileRef, profileDataState);
+
+                        if (snapshot.exists()) {
+                            profileDataState = snapshot.val();
+                        } else {
+                            // Проверяем также старый путь по uid на случай обратной совместимости
+                            const oldRef = ref(db, `artifacts/${appId}/public/data/profiles/${user.uid}`);
+                            const oldSnap = await get(oldRef);
+                            if (oldSnap.exists()) {
+                                profileDataState = oldSnap.val();
+                                // Переносим под ключ юзернейма для надежной привязки
+                                await set(profileRef, profileDataState);
+                            } else {
+                                profileDataState = {
+                                    displayName: tgName,
+                                    searchName: tgName.toLowerCase(),
+                                    tgUsername: tgUsername,
+                                    photoBase64: tgUser?.photo_url || DEFAULT_AVATAR,
+                                    bannerBase64: '',
+                                    pageBgBase64: '',
+                                    country: 'Россия',
+                                    countryFlag: '🇷🇺',
+                                    birthdate: '',
+                                    about: 'Привет! Мой аккаунт в Vibegram привязан к Telegram 🚀',
+                                    favoriteColor: '#ff2e88',
+                                    userPhotos: [],
+                                    socialLinks: [{ name: 'Telegram', link: tgUsername }],
+                                    favoriteGames: [],
+                                    sports: [],
+                                    dreamCars: [],
+                                    favoriteMovies: [],
+                                    favoriteSeries: [],
+                                    musicGenres: [],
+                                    favoriteSongs: [],
+                                    hobbies: [],
+                                    activeCategories: ['photos', 'socials', 'games', 'sport', 'garage', 'movies', 'series', 'music', 'hobbies', 'color'],
+                                    vibeCount: 1,
+                                    vibeGivers: [],
+                                    updatedAt: Date.now()
+                                };
+                                await set(profileRef, profileDataState);
+                            }
+                        }
+
+                        // Если открыт корневой адрес без uid, автоматически перенаправляем на профиль текущего пользователя ТГ
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (!urlParams.get('uid')) {
+                            window.navigateTo(`?uid=${cleanTgKey}`);
                         }
                     }
                 });
@@ -3022,7 +3057,7 @@
                             document.getElementById('profile-avatar-img').src = base64;
                             
                             const headerAvatarBtn = document.getElementById('header-avatar-btn');
-                            if (headerAvatarBtn && auth && auth.currentUser && currentProfileUid === auth.currentUser.uid) {
+                            if (headerAvatarBtn && auth && auth.currentUser && currentProfileUid === (currentUser?.username?.replace('@','').toLowerCase())) {
                                 headerAvatarBtn.src = base64;
                             }
                             await saveProfileToFirebase();
@@ -3186,8 +3221,9 @@
             const myProfileNav = document.getElementById('nav-my-profile');
             if (myProfileNav) {
                 myProfileNav.addEventListener('click', () => {
-                    if (auth && auth.currentUser) {
-                        window.navigateTo(`?uid=${auth.currentUser.uid}`);
+                    if (currentUser && currentUser.username) {
+                        const cleanKey = currentUser.username.replace('@', '').toLowerCase();
+                        window.navigateTo(`?uid=${cleanKey}`);
                     }
                     const menu = document.getElementById('dropdown-menu');
                     if (menu) menu.classList.remove('active');
@@ -3209,7 +3245,7 @@
             const closeQrModalBtn = document.getElementById('close-qr-modal-btn');
             if (myQrBtn && qrModalBackdrop) {
                 myQrBtn.addEventListener('click', () => {
-                    const targetUid = currentProfileUid || (auth && auth.currentUser ? auth.currentUser.uid : 'demo');
+                    const targetUid = currentProfileUid || (currentUser ? currentUser.username.replace('@', '').toLowerCase() : 'demo');
                     const profileUrl = `${window.location.origin}${window.location.pathname}?uid=${targetUid}`;
                     const qrImg = document.getElementById('qr-code-img');
                     if (qrImg) {
@@ -3227,7 +3263,7 @@
             const shareProfileBtn = document.getElementById('share-profile-btn');
             if (shareProfileBtn) {
                 shareProfileBtn.addEventListener('click', () => {
-                    const targetUid = currentProfileUid || (auth && auth.currentUser ? auth.currentUser.uid : 'demo');
+                    const targetUid = currentProfileUid || (currentUser ? currentUser.username.replace('@', '').toLowerCase() : 'demo');
                     const profileUrl = `${window.location.origin}${window.location.pathname}?uid=${targetUid}`;
                     if (navigator.clipboard) {
                         navigator.clipboard.writeText(profileUrl).then(() => {
@@ -3283,14 +3319,17 @@
             if (loginFormEl) {
                 loginFormEl.addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    if (auth && auth.currentUser) {
-                        currentUser = { uid: auth.currentUser.uid, username: '@user' };
-                        updateAuthUI(currentUser);
-                        const backdrop = document.getElementById('auth-modal-backdrop');
-                        if (backdrop) backdrop.classList.remove('active');
-                        window.navigateTo(`?uid=${auth.currentUser.uid}`);
-                        showToast('Успешный вход в облачный профиль!');
-                    }
+                    let tgUser = document.getElementById('login-username').value.trim().toLowerCase();
+                    if (!tgUser.startsWith('@')) tgUser = '@' + tgUser;
+                    const cleanKey = tgUser.replace('@', '');
+
+                    currentUser = { uid: firebaseUser ? firebaseUser.uid : 'custom', username: tgUser };
+                    updateAuthUI(currentUser);
+                    
+                    const backdrop = document.getElementById('auth-modal-backdrop');
+                    if (backdrop) backdrop.classList.remove('active');
+                    window.navigateTo(`?uid=${cleanKey}`);
+                    showToast('Успешный вход по Telegram юзернейму!');
                 });
             }
 
@@ -3301,6 +3340,7 @@
                     const nickname = document.getElementById('reg-nickname').value.trim();
                     let tgUsername = document.getElementById('reg-username').value.trim().toLowerCase();
                     if (!tgUsername.startsWith('@')) tgUsername = '@' + tgUsername;
+                    const cleanKey = tgUsername.replace('@', '');
 
                     if (auth && auth.currentUser) {
                         const newProfile = {
@@ -3313,7 +3353,7 @@
                             country: 'Россия',
                             countryFlag: '🇷🇺',
                             birthdate: '',
-                            about: 'Привет! Я новый пользователь Vibegram ✨',
+                            about: 'Привет! Я зарегистрирован в Vibegram через Telegram ✨',
                             favoriteColor: '#ff2e88',
                             userPhotos: [],
                             socialLinks: [{ name: 'Telegram', link: tgUsername }],
@@ -3325,23 +3365,24 @@
                             musicGenres: [],
                             favoriteSongs: [],
                             hobbies: [],
-                            activeCategories: ['photos'],
+                            activeCategories: ['photos', 'socials', 'games', 'sport', 'garage', 'movies', 'series', 'music', 'hobbies', 'color'],
                             vibeCount: 1,
                             vibeGivers: [],
                             updatedAt: Date.now()
                         };
 
                         profileDataState = newProfile;
-                        await saveProfileToFirebase();
+                        const profileRef = ref(db, `artifacts/${appId}/public/data/profiles/${cleanKey}`);
+                        await set(profileRef, profileDataState);
 
-                        currentUser = { uid: auth.currentUser.uid, username: tgUsername };
+                        currentUser = { uid: auth.currentUser.uid, username: tgUsername, displayName: nickname };
                         updateAuthUI(currentUser);
 
                         const backdrop = document.getElementById('auth-modal-backdrop');
                         if (backdrop) backdrop.classList.remove('active');
 
-                        showToast('Регистрация и облачное сохранение успешны!');
-                        window.navigateTo(`?uid=${auth.currentUser.uid}`);
+                        showToast('Регистрация и привязка к Telegram успешны!');
+                        window.navigateTo(`?uid=${cleanKey}`);
                     }
                 });
             }
@@ -3356,7 +3397,7 @@
                         updateAuthUI(currentUser);
                         const backdrop = document.getElementById('auth-modal-backdrop');
                         if (backdrop) backdrop.classList.remove('active');
-                        window.navigateTo(`?uid=${auth.currentUser.uid}`);
+                        window.navigateTo(`?uid=demo_user`);
                         showToast('Активирован облачный демо-режим!');
                     }
                 });
@@ -3392,7 +3433,7 @@
                         localStorage.setItem('vibegram_theme_name', themeName);
                         localStorage.setItem('vibegram_accent_color', themeColor);
                         
-                        if (profileDataState && auth && auth.currentUser && currentProfileUid === auth.currentUser.uid) {
+                        if (profileDataState && currentUser) {
                             profileDataState.favoriteColor = themeColor;
                             const colorHexLabel = document.getElementById('color-hex-label');
                             if (colorHexLabel) colorHexLabel.innerText = themeColor.toUpperCase();
@@ -3493,7 +3534,7 @@
                     document.documentElement.style.setProperty('--accent-pink-hover', newColor);
                     profileDataState.favoriteColor = newColor;
                     if (colorHexLabel) colorHexLabel.innerText = newColor.toUpperCase();
-                    if (auth && auth.currentUser && currentProfileUid === auth.currentUser.uid) {
+                    if (auth && auth.currentUser && currentUser) {
                         localStorage.setItem('vibegram_accent_color', newColor);
                         await saveProfileToFirebase();
                     }
@@ -3508,7 +3549,7 @@
                     document.documentElement.style.setProperty('--accent-pink-hover', chosenColor);
                     profileDataState.favoriteColor = chosenColor;
                     if (colorHexLabel) colorHexLabel.innerText = chosenColor.toUpperCase();
-                    if (auth && auth.currentUser && currentProfileUid === auth.currentUser.uid) {
+                    if (auth && auth.currentUser && currentUser) {
                         localStorage.setItem('vibegram_accent_color', chosenColor);
                         await saveProfileToFirebase();
                     }
