@@ -1258,12 +1258,15 @@
     };
 
     const appId = (typeof __app_id !== 'undefined' ? __app_id : 'vibegram-default-app').replace(/[.#$\[\]]/g, '_');
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-        apiKey: "AIzaSyDummyKeyForVibegramFallback12345",
-        authDomain: "vibegram-app.firebaseapp.com",
-        databaseURL: "https://vibegram-app-default-rtdb.firebaseio.com",
-        projectId: "vibegram-app"
-    };
+    const firebaseConfig = {
+  apiKey: "AIzaSyBxShTi6HSpNolc2FbflnNvZPxzFNbCdfo",
+  authDomain: "vibegram-73901.firebaseapp.com",
+  projectId: "vibegram-73901",
+  storageBucket: "vibegram-73901.firebasestorage.app",
+  messagingSenderId: "78131286338",
+  appId: "1:78131286338:web:31300ac4075b223d0778db",
+  measurementId: "G-S0DY0NDSM1"
+};
 
     let app, auth, db;
     try {
