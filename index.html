@@ -3452,7 +3452,7 @@
                     updateAuthUI(currentUser);
 
                     const backdrop = document.getElementById('auth-modal-backdrop');
-                    if (backdrop) backdrop.classList.dismiss('active');
+                    if (backdrop) backdrop.classList.remove('active');
 
                     showToast('Регистрация и привязка успешны!');
                     window.navigateTo(`?uid=${cleanKey}`);
